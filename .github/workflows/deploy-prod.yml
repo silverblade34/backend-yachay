@@ -60,7 +60,8 @@ jobs:
             podman image prune -f
             
             # Construir y levantar los contenedores
-            podman-compose up -d --build
+            podman-compose build --no-cache
+            podman-compose up -d
             
             # Esperar unos segundos para que el servicio inicie
             sleep 15
