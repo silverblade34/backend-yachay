@@ -28,7 +28,7 @@ export class LearningService {
     this.geminiInstances = apiKeys.map(apiKey => new GoogleGenerativeAI(apiKey ? apiKey : ""));
     this.models = this.geminiInstances.map(genAI =>
       genAI.getGenerativeModel({
-        model: 'gemini-2.5-pro',
+        model: 'gemini-2.5-flash',
         generationConfig: {
           temperature: 0.7,
           maxOutputTokens: 4000,
