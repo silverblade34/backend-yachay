@@ -12,6 +12,8 @@ import { CategoryModule } from './modules/category/category.module';
 import { CharactersModule } from './modules/characters/characters.module';
 import { LearningModule } from './modules/learning/learning.module';
 import { QuizModule } from './modules/quiz/quiz.module';
+import { Trivia } from './modules/trivia/entities/trivia.entity';
+import { TriviaModule } from './modules/trivia/trivia.module';
 
 @Module({
   imports: [
@@ -26,7 +28,8 @@ import { QuizModule } from './modules/quiz/quiz.module';
     PreferencesModule,
     CategoryModule,
     LearningModule,
-    QuizModule
+    QuizModule,
+    TriviaModule
   ],
   controllers: [],
   providers: [],
