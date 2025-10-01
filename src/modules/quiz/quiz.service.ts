@@ -6,10 +6,17 @@ import { QuestionResult } from './entities/question-result.entity';
 import { User } from '../user/entities/user.entity';
 import { CreateQuizResultDto } from './dto/create-quiz-result.dto';
 import { Category } from '../category/entities/category.entity';
+import { Quiz } from './entities/quiz.entity';
+import { QuestionsBank } from './entities/question-banks.entity';
+import { CreateQuizDto } from '../learning/dto/create-quiz.dto';
 
 @Injectable()
 export class QuizService {
   constructor(
+    @InjectRepository(Quiz)
+    private quizRepo: Repository<Quiz>,
+    @InjectRepository(QuestionsBank)
+    private questionBankRepo: Repository<QuestionsBank>,
     @InjectRepository(QuizResult)
     private quizResultRepo: Repository<QuizResult>,
     @InjectRepository(Category)
@@ -17,6 +24,44 @@ export class QuizService {
     @InjectRepository(User)
     private userRepo: Repository<User>,
   ) { }
+
+  async createQuiz(
+    createQuizDto: CreateQuizDto,
+    userId: string,
+    questionIds: string[]
+  ): Promise<Quiz> {
+    try {
+      const questions = await this.questionBankRepo.findByIds(questionIds);
+
+      if (questions.length !== questionIds.length) {
+        throw new Error('Algunas preguntas no se encontraron en el banco');
+      }
+
+      const quiz = this.quizRepo.create({
+        title: createQuizDto.title,
+        topic: createQuizDto.topic,
+        description: createQuizDto.description,
+        difficulty: createQuizDto.difficulty,
+        language: createQuizDto.language || 'español',
+        totalQuestions: createQuizDto.questionCount,
+        timeLimit: createQuizDto.timeLimit,
+        ispublic: createQuizDto.ispublic ?? false,
+        allowComments: createQuizDto.allowComments ?? true,
+        allowRetries: createQuizDto.allowRetries ?? true,
+        showResults: createQuizDto.showResults ?? true,
+        focusAreas: createQuizDto.focusAreas,
+        questionTypesConfig: createQuizDto.questionTypes,
+        userId,
+        categoryId: createQuizDto.categoryId,
+        courseModuleId: createQuizDto.moduleId || undefined,
+        questions
+      });
+
+      return await this.quizRepo.save(quiz);
+    } catch (error) {
+      throw error;
+    }
+  }
 
   async createQuizResult(dto: CreateQuizResultDto, userId: string): Promise<QuizResult> {
     const user = await this.userRepo.findOneBy({ id: userId });
@@ -31,7 +76,6 @@ export class QuizService {
       }
     }
 
-    // Crear los resultados de las preguntas
     const questionResults = dto.questionResults.map(qr => {
       const questionResult = new QuestionResult();
       questionResult.questionId = qr.questionId;
@@ -40,7 +84,6 @@ export class QuizService {
       questionResult.correctAnswer = qr.correctAnswer;
       questionResult.timeSpent = qr.timeSpent;
 
-      // Datos adicionales que podrías querer guardar
       questionResult.additionalData = {
         originalQuestionId: qr.questionId,
         timestamp: new Date().toISOString()
@@ -49,7 +92,6 @@ export class QuizService {
       return questionResult;
     });
 
-    // Crear el resultado del quiz
     const quizResult = this.quizResultRepo.create({
       quiz: dto.quiz,
       finalScore: dto.finalScore,
@@ -69,7 +111,6 @@ export class QuizService {
     }
   }
 
-  // Método para obtener resultados con estadísticas
   async getQuizResultById(id: string): Promise<QuizResult> {
     const result = await this.quizResultRepo.findOne({
       where: { id },
@@ -83,7 +124,6 @@ export class QuizService {
     return result;
   }
 
-  // Método para obtener estadísticas del usuario
   async getUserQuizStats(userId: string) {
     const results = await this.quizResultRepo.find({
       where: { user: { id: userId } },

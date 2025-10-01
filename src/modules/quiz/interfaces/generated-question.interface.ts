@@ -1,6 +1,6 @@
-import { QuestionExplanation } from "./question-explanation.interface";
-import { QuestionHint } from "./question-hint.interface";
-import { QuestionOption } from "./question-option.interface";
+import { QuestionExplanation } from "src/modules/learning/interfaces/question-explanation.interface";
+import { QuestionHint } from "src/modules/learning/interfaces/question-hint.interface";
+import { QuestionOption } from "src/modules/learning/interfaces/question-option.interface";
 
 export type QuestionType =
     | 'multiple_choice'      // Opción múltiple tradicional
@@ -36,5 +36,4 @@ export interface GeneratedQuestion {
 
     // Metadatos para personalización
     tags: string[];
-
 }

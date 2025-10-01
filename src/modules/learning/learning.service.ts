@@ -1,10 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { QuestionGenerationRequest } from './interfaces/question-generation-request.interface';
-import { GeneratedQuestion, QuestionType } from './interfaces/generated-question.interface';
 import { QuestionHint } from './interfaces/question-hint.interface';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import * as crypto from 'crypto';
-import { QuestionsBankService } from './question-bank.service';
+import { QuestionsBankService } from '../quiz/question-bank.service';
+import { GeneratedQuestion, QuestionType } from '../quiz/interfaces/generated-question.interface';
+import { QuestionGenerationRequest } from '../quiz/interfaces/question-generation-request.interface';
 
 @Injectable()
 export class LearningService {
@@ -38,10 +38,10 @@ export class LearningService {
   }
 
   async generateQuestions(request: QuestionGenerationRequest): Promise<GeneratedQuestion[]> {
+    // Validar si existe en cache este mismo examen, osea si fue generado antes
     const cacheKey = this.generateCacheKey(request);
 
     if (this.cache.has(cacheKey)) {
-      this.logger.log(`Cache hit for key: ${cacheKey}`);
       return this.cache.get(cacheKey) ?? [];
     }
 
@@ -52,14 +52,12 @@ export class LearningService {
     );
 
     if (bankQuestions.length >= request.questionCount) {
-      this.logger.log(`Found ${bankQuestions.length} questions in bank, no need to generate new ones`);
       this.cache.set(cacheKey, bankQuestions.slice(0, request.questionCount));
       return bankQuestions.slice(0, request.questionCount);
     }
 
     // PASO 2: Generar preguntas faltantes
     const questionsNeeded = request.questionCount - bankQuestions.length;
-    this.logger.log(`Found ${bankQuestions.length} questions in bank, generating ${questionsNeeded} new ones`);
 
     const specificTopics = await this.generateDiverseTopics({
       ...request,

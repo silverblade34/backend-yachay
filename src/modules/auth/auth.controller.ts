@@ -21,7 +21,6 @@ export class AuthController {
     const filePath = path.join(dirPath, 'body_prueba.json');
 
     try {
-      // Crear directorio si no existe
       if (!fs.existsSync(dirPath)) {
         fs.mkdirSync(dirPath, { recursive: true });
       }

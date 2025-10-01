@@ -13,8 +13,6 @@ export class QuizController {
     @Body() createQuizResultDto: CreateQuizResultDto,
     @Req() req: any // O usar tu decorador personalizado para obtener el usuario
   ) {
-    console.log("======================================")
-    console.log(JSON.stringify(createQuizResultDto))
     const userId = req.user?.id; // Ajusta según tu implementación de auth
     return this.quizService.createQuizResult(createQuizResultDto, userId);
   }

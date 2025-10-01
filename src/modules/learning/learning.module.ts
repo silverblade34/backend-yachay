@@ -1,15 +1,19 @@
 import { Module } from '@nestjs/common';
 import { LearningService } from './learning.service';
 import { LearningController } from './learning.controller';
-import { QuestionsBankService } from './question-bank.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { QuestionsBank } from './entities/question-banks.entity';
+import { QuestionsBank } from '../quiz/entities/question-banks.entity';
+import { QuestionsBankService } from '../quiz/question-bank.service';
+import { QuizModule } from '../quiz/quiz.module';
+import { QuizService } from '../quiz/quiz.service';
 
 @Module({
   imports: [
+    QuizModule,
     TypeOrmModule.forFeature([QuestionsBank])
   ],
   controllers: [LearningController],
-  providers: [LearningService, QuestionsBankService],
+  providers: [LearningService, QuestionsBankService, QuizService],
+  exports: [TypeOrmModule]
 })
 export class LearningModule { }

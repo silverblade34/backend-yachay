@@ -8,7 +8,9 @@ import {
   Min,
   Max,
   ArrayMinSize,
-  IsEnum
+  IsEnum,
+  IsUUID,
+  IsBoolean
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { QuestionType } from '../enum/question-type.enum';
@@ -32,6 +34,10 @@ export class QuestionTypeConfigDto {
 }
 
 export class CreateQuizDto {
+  @IsNotEmpty({ message: 'El titulo es obligatorio' })
+  @IsString({ message: 'El titulo debe ser un texto' })
+  title: string;
+
   @IsNotEmpty({ message: 'El tema es obligatorio' })
   @IsString({ message: 'El tema debe ser un texto' })
   topic: string;
@@ -39,6 +45,14 @@ export class CreateQuizDto {
   @IsOptional()
   @IsString({ message: 'La descripción debe ser un texto' })
   description?: string;
+
+  @IsNotEmpty({ message: 'El id de la categoria es obligatorio' })
+  @IsUUID()
+  categoryId: string;
+
+  @IsOptional()
+  @IsUUID()
+  moduleId?: string;
 
   @IsNotEmpty({ message: 'La dificultad es obligatoria' })
   @IsEnum(DifficultyLevel, {
@@ -67,5 +81,31 @@ export class CreateQuizDto {
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  focusAreas?: string[]; // Áreas específicas a enfatizar
+  focusAreas?: string[];
+
+  @IsOptional()
+  @IsNumber({}, { message: 'El límite de tiempo debe ser un número' })
+  @Type(() => Number)
+  @Min(1, { message: 'El límite de tiempo mínimo es 1 minuto' })
+  timeLimit?: number;
+
+  @IsOptional()
+  @IsBoolean({ message: 'ispublic debe ser un valor booleano' })
+  @Type(() => Boolean)
+  ispublic?: boolean;
+
+  @IsOptional()
+  @IsBoolean({ message: 'allowComments debe ser un valor booleano' })
+  @Type(() => Boolean)
+  allowComments?: boolean;
+
+  @IsOptional()
+  @IsBoolean({ message: 'allowRetries debe ser un valor booleano' })
+  @Type(() => Boolean)
+  allowRetries?: boolean;
+
+  @IsOptional()
+  @IsBoolean({ message: 'showResults debe ser un valor booleano' })
+  @Type(() => Boolean)
+  showResults?: boolean;
 }

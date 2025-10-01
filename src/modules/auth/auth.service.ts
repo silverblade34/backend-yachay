@@ -24,11 +24,12 @@ export class AuthService {
   ) { }
 
   async login(dto: LoginUserDto) {
+    console.log(JSON.stringify(dto))
     const user = await this.userRepo.findOne({
       where: { email: dto.email },
     });
 
-    if (!user) {
+    if (!user || !user.password) {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 

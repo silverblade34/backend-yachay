@@ -1,9 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
-import { GeneratedQuestion } from './interfaces/generated-question.interface';
+import { QuestionsBank } from '../quiz/entities/question-banks.entity';
 import { QuestionGenerationRequest } from './interfaces/question-generation-request.interface';
-import { QuestionsBank } from './entities/question-banks.entity';
+import { GeneratedQuestion } from './interfaces/generated-question.interface';
 
 @Injectable()
 export class QuestionsBankService {
@@ -43,12 +43,25 @@ export class QuestionsBankService {
                 });
             }
 
-            // Si hay descripción, buscar en tags o descripción
+            // Búsqueda mejorada por descripción con tokenización
             if (request.description) {
-                queryBuilder.andWhere(
-                    '(qb.description ILIKE :description OR qb.tags::text ILIKE :description)',
-                    { description: `%${request.description}%` }
-                );
+                const keywords = this.extractKeywords(request.description);
+
+                if (keywords.length > 0) {
+                    // Crear condiciones OR para cada palabra clave
+                    const descriptionConditions = keywords
+                        .map((_, index) =>
+                            `(qb.description ILIKE :keyword${index} OR qb.tags::text ILIKE :keyword${index})`
+                        )
+                        .join(' OR ');
+
+                    queryBuilder.andWhere(`(${descriptionConditions})`);
+
+                    // Añadir parámetros para cada palabra clave
+                    keywords.forEach((keyword, index) => {
+                        queryBuilder.setParameter(`keyword${index}`, `%${keyword}%`);
+                    });
+                }
             }
 
             // Ordenar por uso menos frecuente y más reciente para diversidad
@@ -59,14 +72,19 @@ export class QuestionsBankService {
 
             const questions = await queryBuilder.getMany();
 
-            this.logger.log(`Found ${questions.length} matching questions in bank`);
+            // Si hay descripción, filtrar por mínimo de coincidencias
+            let filteredQuestions = questions;
+            if (request.description && questions.length > 0) {
+                const keywords = this.extractKeywords(request.description);
+                filteredQuestions = this.filterByKeywordMatches(questions, keywords, 2);
+            }
 
-            // Convertir a formato GeneratedQuestion y actualizar estadísticas de uso
-            const generatedQuestions = questions.map(this.convertToGeneratedQuestion);
+            // Convertir a formato GeneratedQuestion
+            const generatedQuestions = filteredQuestions.map(this.convertToGeneratedQuestion);
 
             // Actualizar contadores de uso en paralelo
-            if (questions.length > 0) {
-                this.updateUsageStats(questions.map(q => q.id));
+            if (filteredQuestions.length > 0) {
+                this.updateUsageStats(filteredQuestions.map(q => q.id));
             }
 
             return generatedQuestions;
@@ -74,6 +92,71 @@ export class QuestionsBankService {
             this.logger.error('Error finding matching questions:', error);
             return [];
         }
+    }
+
+    /**
+     * Extrae palabras clave de un texto, removiendo stopwords y normalizando
+     */
+    private extractKeywords(text: string): string[] {
+        // Stopwords comunes en español e inglés
+        const stopwords = new Set([
+            // Español
+            'el', 'la', 'de', 'que', 'y', 'a', 'en', 'un', 'ser', 'se', 'no', 'haber',
+            'por', 'con', 'su', 'para', 'como', 'estar', 'tener', 'le', 'lo', 'todo',
+            'pero', 'más', 'hacer', 'o', 'poder', 'decir', 'este', 'ir', 'otro', 'ese',
+            'si', 'me', 'ya', 'ver', 'porque', 'dar', 'cuando', 'él', 'muy', 'sin',
+            'vez', 'mucho', 'saber', 'qué', 'sobre', 'mi', 'alguno', 'mismo', 'yo',
+            'también', 'hasta', 'año', 'dos', 'querer', 'entre', 'así', 'primero',
+            'desde', 'grande', 'eso', 'ni', 'nos', 'llegar', 'pasar', 'tiempo', 'ella',
+            'sí', 'día', 'uno', 'bien', 'poco', 'deber', 'entonces', 'poner', 'cosa',
+            'tanto', 'hombre', 'parecer', 'nuestro', 'tan', 'donde', 'ahora', 'parte',
+            'después', 'vida', 'quedar', 'siempre', 'creer', 'hablar', 'llevar', 'dejar',
+            // Inglés
+            'the', 'be', 'to', 'of', 'and', 'a', 'in', 'that', 'have', 'i', 'it',
+            'for', 'not', 'on', 'with', 'he', 'as', 'you', 'do', 'at', 'this', 'but',
+            'his', 'by', 'from', 'they', 'we', 'say', 'her', 'she', 'or', 'an', 'will',
+            'my', 'one', 'all', 'would', 'there', 'their', 'what', 'so', 'up', 'out',
+            'if', 'about', 'who', 'get', 'which', 'go', 'me', 'when', 'make', 'can',
+            'like', 'time', 'no', 'just', 'him', 'know', 'take', 'people', 'into',
+            'year', 'your', 'good', 'some', 'could', 'them', 'see', 'other', 'than'
+        ]);
+
+        // Normalizar: minúsculas, remover caracteres especiales, separar por espacios
+        const normalized = text
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '') // Remover acentos
+            .replace(/[^\w\s]/g, ' ') // Remover puntuación
+            .split(/\s+/)
+            .filter(word =>
+                word.length > 2 && // Palabras de al menos 3 caracteres
+                !stopwords.has(word) && // No es stopword
+                !/^\d+$/.test(word) // No es solo números
+            );
+
+        // Remover duplicados
+        return [...new Set(normalized)];
+    }
+
+    /**
+     * Filtra preguntas que tengan al menos minMatches coincidencias de keywords
+     */
+    private filterByKeywordMatches(
+        questions: any[],
+        keywords: string[],
+        minMatches: number
+    ): any[] {
+        if (keywords.length === 0) return questions;
+
+        return questions.filter(question => {
+            const questionText = `${question.description || ''} ${JSON.stringify(question.tags || [])}`.toLowerCase();
+
+            const matches = keywords.filter(keyword =>
+                questionText.includes(keyword)
+            ).length;
+
+            return matches >= minMatches;
+        });
     }
 
     /**
