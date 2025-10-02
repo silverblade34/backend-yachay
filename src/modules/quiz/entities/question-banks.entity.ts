@@ -1,4 +1,5 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index, ManyToMany } from 'typeorm';
+import { Quiz } from './quiz.entity';
 
 @Entity('questions_bank')
 @Index(['topic', 'difficulty', 'language', 'type'])

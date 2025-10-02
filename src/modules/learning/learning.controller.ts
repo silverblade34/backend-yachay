@@ -36,8 +36,10 @@ export class LearningController {
   })
   async generateQuiz(@Body() createQuizDto: CreateQuizDto, @Req() req: any) {
     try {
-      const userId = req.user?.id;
-
+      const { userId } = req.user;
+      console.log(JSON.stringify(req.user))
+      this.logger.log(`Usuario ${userId} solicitando generación de quiz`);
+      if (userId == undefined) this.logger.log("El id del usuario es nulo");
       // Validar porcentajes
       const totalPercentage = createQuizDto.questionTypes.reduce(
         (sum, qt) => sum + qt.percentage, 0
@@ -62,8 +64,21 @@ export class LearningController {
 
       const questions = await this.learningService.generateQuestions(enhancedRequest);
 
+      // Validar que todas las preguntas tengan IDs válidos
       const questionIds = questions.map(q => q.id);
+      const invalidIds = questionIds.filter(id => !this.isValidUUID(id));
 
+      if (invalidIds.length > 0) {
+        this.logger.error(`IDs inválidos encontrados: ${invalidIds.join(', ')}`);
+        throw new HttpException(
+          'Error: Algunas preguntas no tienen IDs válidos',
+          HttpStatus.INTERNAL_SERVER_ERROR
+        );
+      }
+
+      this.logger.log(`Generadas ${questions.length} preguntas con IDs válidos`);
+
+      // Guardar el quiz
       const savedQuiz = await this.quizService.createQuiz(
         createQuizDto,
         userId,
@@ -74,6 +89,7 @@ export class LearningController {
         id: savedQuiz.id,
         title: savedQuiz.title,
         topic: savedQuiz.topic,
+        description: savedQuiz.description,
         difficulty: savedQuiz.difficulty,
         totalQuestions: savedQuiz.totalQuestions,
         timeLimit: savedQuiz.timeLimit,
@@ -86,23 +102,25 @@ export class LearningController {
           createdAt: savedQuiz.createdAt.toISOString(),
           language: savedQuiz.language,
           categoryId: savedQuiz.categoryId,
-          moduleId: savedQuiz.courseModuleId
+          courseModuleId: savedQuiz.courseModuleId
         }
       };
     } catch (error) {
-      this.logger.error('Error generating enhanced quiz:', error);
+      this.logger.error('Error generating quiz:', error);
       if (error instanceof HttpException) {
         throw error;
       }
       throw new HttpException(
-        {
-          success: false,
-          error: error.message,
-          message: 'Error al generar el quiz personalizado'
-        },
+        'Error al generar el quiz personalizado',
         HttpStatus.INTERNAL_SERVER_ERROR
       );
     }
+  }
+
+  // Método auxiliar para validar UUIDs
+  private isValidUUID(id: string): boolean {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(id);
   }
 
   @HttpCode(HttpStatus.OK)

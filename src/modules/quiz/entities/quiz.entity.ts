@@ -90,7 +90,6 @@ export class Quiz {
   @JoinColumn({ name: 'categoryId' })
   category: Category;
 
-  // CAMBIO CRÍTICO: Agregar undefined al tipo
   @Column({ type: 'uuid', nullable: true })
   courseModuleId?: string;
 

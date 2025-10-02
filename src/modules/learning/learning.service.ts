@@ -18,7 +18,7 @@ export class LearningService {
     private questionsBankService: QuestionsBankService,
   ) {
     const apiKeys = [
-      process.env.GEMINI_API_KEY_1,
+      process.env.GEMINI_API_KEY_6,
       process.env.GEMINI_API_KEY_2,
       process.env.GEMINI_API_KEY_3,
       process.env.GEMINI_API_KEY_4,
@@ -38,26 +38,27 @@ export class LearningService {
   }
 
   async generateQuestions(request: QuestionGenerationRequest): Promise<GeneratedQuestion[]> {
-    // Validar si existe en cache este mismo examen, osea si fue generado antes
+    // Validar si existe en cache
     const cacheKey = this.generateCacheKey(request);
-
     if (this.cache.has(cacheKey)) {
       return this.cache.get(cacheKey) ?? [];
     }
 
-    // PASO 1: Buscar preguntas existentes en el banco
+    // Buscar preguntas existentes en el banco
     const bankQuestions = await this.questionsBankService.findMatchingQuestions(
       request,
       request.questionCount
     );
 
     if (bankQuestions.length >= request.questionCount) {
-      this.cache.set(cacheKey, bankQuestions.slice(0, request.questionCount));
-      return bankQuestions.slice(0, request.questionCount);
+      const selectedQuestions = bankQuestions.slice(0, request.questionCount);
+      this.cache.set(cacheKey, selectedQuestions);
+      return selectedQuestions;
     }
 
-    // PASO 2: Generar preguntas faltantes
+    // Generar preguntas faltantes
     const questionsNeeded = request.questionCount - bankQuestions.length;
+    this.logger.log(`Se necesitan ${questionsNeeded} preguntas nuevas. Ya tenemos ${bankQuestions.length} del banco.`);
 
     const specificTopics = await this.generateDiverseTopics({
       ...request,
@@ -70,7 +71,6 @@ export class LearningService {
     for (let i = 0; i < questionsNeeded; i++) {
       const modelIndex = i % this.models.length;
       const specificTopic = specificTopics[i % specificTopics.length];
-
       const singleQuestionRequest = {
         ...request,
         questionCount: 1,
@@ -92,26 +92,29 @@ export class LearningService {
       .map(result => result.status === 'fulfilled' ? result.value : null)
       .filter((q): q is GeneratedQuestion => q !== null);
 
-    // PASO 3: Completar con Mistral si faltan preguntas
+    // Completar con Mistral si faltan preguntas
     const stillNeeded = questionsNeeded - newQuestions.length;
     if (stillNeeded > 0) {
-      this.logger.log(`Gemini generated ${newQuestions.length}/${questionsNeeded}. Generating ${stillNeeded} more with Mistral`);
-
+      this.logger.log(`Gemini generó ${newQuestions.length}/${questionsNeeded}. Generando ${stillNeeded} con Mistral`);
       const mistralQuestions = await this.generateQuestionsWithMistral(
         { ...request, questionCount: stillNeeded },
         specificTopics.slice(newQuestions.length)
       );
-
       newQuestions = [...newQuestions, ...mistralQuestions];
     }
 
-    // PASO 4: Guardar nuevas preguntas en el banco
+    // Guardar y obtener preguntas con UUIDs reales
+    let savedNewQuestions: GeneratedQuestion[] = [];
     if (newQuestions.length > 0) {
-      await this.questionsBankService.saveQuestions(newQuestions, request);
+      savedNewQuestions = await this.questionsBankService.saveQuestions(
+        newQuestions,
+        request
+      );
+      this.logger.log(`${savedNewQuestions.length} preguntas guardadas con UUIDs reales`);
     }
 
-    // PASO 5: Combinar preguntas del banco con las nuevas
-    const allQuestions = [...bankQuestions, ...newQuestions].slice(0, request.questionCount);
+    // Combinar preguntas del banco con las guardadas (ambas tienen UUIDs reales)
+    const allQuestions = [...bankQuestions, ...savedNewQuestions].slice(0, request.questionCount);
 
     this.cache.set(cacheKey, allQuestions);
     return allQuestions;
@@ -366,7 +369,7 @@ Generate exactly ${request.questionCount} subtopics as a JSON array:`;
       const questions = this.parseEnhancedQuestions(text, request, `GEMINI-${instanceNumber}`);
       return questions[0] || null;
     } catch (error) {
-      this.logger.warn(`Error generating question ${questionNumber} with GEMINI-${instanceNumber}:`, error.message);
+      this.logger.warn(`Error generating question ${questionNumber} with GEMINI-${instanceNumber}:`, error.message, model);
       return null;
     }
   }

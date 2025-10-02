@@ -6,10 +6,12 @@ import { QuestionsBank } from '../quiz/entities/question-banks.entity';
 import { QuestionsBankService } from '../quiz/question-bank.service';
 import { QuizModule } from '../quiz/quiz.module';
 import { QuizService } from '../quiz/quiz.service';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
     QuizModule,
+    AuthModule,
     TypeOrmModule.forFeature([QuestionsBank])
   ],
   controllers: [LearningController],

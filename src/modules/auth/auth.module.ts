@@ -9,6 +9,7 @@ import { JwtStrategy } from './jwt/jwt.strategy';
 import { UserProfile } from '../user/entities/user-profile';
 import { UserAvatar } from '../user/entities/user-avatar.entity';
 import { FirebaseService } from './firebase.service';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 
 @Module({
@@ -17,7 +18,7 @@ import { FirebaseService } from './firebase.service';
     JwtModule.register(jwtConfig)
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, FirebaseService],
-  exports: [FirebaseService]
+  providers: [AuthService, JwtStrategy, FirebaseService, JwtAuthGuard],
+  exports: [FirebaseService, JwtAuthGuard, JwtModule]
 })
 export class AuthModule { }

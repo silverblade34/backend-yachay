@@ -4,6 +4,11 @@ import { Repository, In } from 'typeorm';
 import { QuestionsBank } from '../quiz/entities/question-banks.entity';
 import { QuestionGenerationRequest } from './interfaces/question-generation-request.interface';
 import { GeneratedQuestion } from './interfaces/generated-question.interface';
+import { QuestionType } from '../learning/enum/question-type.enum';
+import { DifficultyLevel } from '../learning/enum/difficulty-level.enum';
+import { QuestionOption } from '../learning/interfaces/question-option.interface';
+import { QuestionHint } from '../learning/interfaces/question-hint.interface';
+import { QuestionExplanation } from '../learning/interfaces/question-explanation.interface';
 
 @Injectable()
 export class QuestionsBankService {
@@ -165,8 +170,8 @@ export class QuestionsBankService {
     async saveQuestions(
         questions: GeneratedQuestion[],
         request: QuestionGenerationRequest
-    ): Promise<void> {
-        if (!questions.length) return;
+    ): Promise<GeneratedQuestion[]> {
+        if (!questions.length) return [];
 
         try {
             const questionsToSave = questions.map(question => {
@@ -187,13 +192,26 @@ export class QuestionsBankService {
                 return questionBank;
             });
 
-            // Usar upsert para evitar duplicados por questionId
-            await this.questionsBankRepository.upsert(questionsToSave, ['questionId']);
+            const savedQuestions = await this.questionsBankRepository.save(questionsToSave);
 
-            this.logger.log(`Saved ${questions.length} questions to bank`);
+            this.logger.log(`Guardadas ${savedQuestions.length} preguntas. IDs: ${savedQuestions.map(q => q.id).slice(0, 3).join(', ')}...`);
+
+            return savedQuestions.map(saved => ({
+                id: saved.id,
+                question: saved.question,
+                type: saved.type as QuestionType,
+                difficulty: saved.difficulty as DifficultyLevel,
+                topic: saved.topic,
+                language: saved.language,
+                options: saved.options as QuestionOption[],
+                correctAnswers: saved.correctAnswers,
+                hints: saved.hints as QuestionHint[],
+                explanation: saved.explanation as QuestionExplanation,
+                tags: saved.tags
+            }));
         } catch (error) {
             this.logger.error('Error saving questions to bank:', error);
-            // No lanzamos el error para no afectar el flujo principal
+            throw error;
         }
     }
 
@@ -262,7 +280,7 @@ export class QuestionsBankService {
 
     private convertToGeneratedQuestion(questionBank: QuestionsBank): GeneratedQuestion {
         return {
-            id: questionBank.questionId,
+            id: questionBank.id,
             question: questionBank.question,
             type: questionBank.type as any,
             difficulty: questionBank.difficulty as any,
