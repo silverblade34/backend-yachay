@@ -10,15 +10,16 @@ import { UserProfile } from '../user/entities/user-profile';
 import { UserAvatar } from '../user/entities/user-avatar.entity';
 import { FirebaseService } from './firebase.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { AppVersion } from './entities/app-version.entity';
 
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, UserProfile, UserAvatar]),
+    TypeOrmModule.forFeature([User, UserProfile, UserAvatar, AppVersion]),
     JwtModule.register(jwtConfig)
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, FirebaseService, JwtAuthGuard],
-  exports: [FirebaseService, JwtAuthGuard, JwtModule]
+  exports: [FirebaseService, JwtAuthGuard, JwtModule, TypeOrmModule]
 })
 export class AuthModule { }

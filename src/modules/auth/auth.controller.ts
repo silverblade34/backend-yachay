@@ -1,9 +1,8 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, HttpStatus, HttpCode } from '@nestjs/common';
+import { Controller, Get, Post, Body, HttpStatus, HttpCode, Query } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginUserDto } from './dto/login-user.dto';
 import { FirebaseAuthDto } from './dto/firebase-auth.dto';
-import * as fs from 'fs';
-import * as path from 'path';
+import { CheckVersionDto } from './dto/check-version.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -13,29 +12,6 @@ export class AuthController {
   @Post('login')
   async login(@Body() loginAuthDto: LoginUserDto) {
     return this.authService.login(loginAuthDto);
-  }
-
-  @Post('prueba')
-  async prueba(@Body() body: any) {
-    const dirPath = path.join(process.cwd(), 'temp');
-    const filePath = path.join(dirPath, 'body_prueba.json');
-
-    try {
-      if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(dirPath, { recursive: true });
-      }
-
-      await fs.promises.writeFile(filePath, JSON.stringify(body, null, 2), 'utf-8');
-      return {
-        message: 'Archivo guardado exitosamente',
-        path: filePath
-      };
-    } catch (error) {
-      return {
-        error: 'Error al procesar',
-        details: error.message
-      };
-    }
   }
 
   @HttpCode(HttpStatus.OK)
@@ -48,5 +24,20 @@ export class AuthController {
   @Post('check-profile')
   async checkProfile(@Body() firebaseAuthDto: FirebaseAuthDto) {
     return this.authService.checkUserProfile(firebaseAuthDto);
+  }
+
+  @HttpCode(HttpStatus.OK)
+  @Post('check-version')
+  async checkVersion(@Body() checkVersionDto: CheckVersionDto) {
+    return this.authService.checkAppVersion(checkVersionDto);
+  }
+
+  @HttpCode(HttpStatus.OK)
+  @Get('check-version')
+  async checkVersionGet(
+    @Query('version') version: string,
+    @Query('platform') platform: string,
+  ) {
+    return this.authService.checkAppVersion({ version, platform });
   }
 }

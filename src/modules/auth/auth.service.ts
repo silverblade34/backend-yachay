@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
 import { LoginUserDto } from './dto/login-user.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from '../user/entities/user.entity';
@@ -9,6 +9,8 @@ import { UserProfile } from '../user/entities/user-profile';
 import { UserAvatar } from '../user/entities/user-avatar.entity';
 import { FirebaseAuthDto } from './dto/firebase-auth.dto';
 import { FirebaseService } from './firebase.service';
+import { CheckVersionDto } from './dto/check-version.dto';
+import { AppVersion } from './entities/app-version.entity';
 
 @Injectable()
 export class AuthService {
@@ -20,6 +22,8 @@ export class AuthService {
     private readonly profileRepo: Repository<UserProfile>,
     @InjectRepository(UserAvatar)
     private readonly avatarRepo: Repository<UserAvatar>,
+    @InjectRepository(AppVersion)
+    private readonly appVersionRepo: Repository<AppVersion>,
     private readonly firebaseService: FirebaseService,
   ) { }
 
@@ -38,6 +42,50 @@ export class AuthService {
     }
 
     return await this.generateUserResponse(user);
+  }
+
+  async checkAppVersion(checkVersionDto: CheckVersionDto) {
+    const { version, platform } = checkVersionDto;
+
+    const versionConfig = await this.appVersionRepo.findOne({
+      where: { platform: platform.toLowerCase() },
+    });
+
+    if (!versionConfig) {
+      throw new BadRequestException('Platform not supported');
+    }
+
+    const currentVersion = this.parseVersion(version);
+    const minVersion = this.parseVersion(versionConfig.minVersion);
+    const latestVersion = this.parseVersion(versionConfig.latestVersion);
+
+    const needsUpdate = this.compareVersions(currentVersion, latestVersion) < 0;
+    const isForceUpdate = this.compareVersions(currentVersion, minVersion) < 0;
+
+    return {
+      currentVersion: version,
+      latestVersion: versionConfig.latestVersion,
+      minVersion: versionConfig.minVersion,
+      needsUpdate,
+      forceUpdate: isForceUpdate || versionConfig.forceUpdate,
+      updateUrl: versionConfig.updateUrl,
+      releaseNotes: versionConfig.releaseNotes,
+      canContinue: !isForceUpdate && !versionConfig.forceUpdate,
+    };
+  }
+
+  // Comparar versiones: retorna -1 si v1 < v2, 0 si son iguales, 1 si v1 > v2
+  private compareVersions(v1: number[], v2: number[]): number {
+    for (let i = 0; i < 3; i++) {
+      if (v1[i] < v2[i]) return -1;
+      if (v1[i] > v2[i]) return 1;
+    }
+    return 0;
+  }
+
+  // Convertir "1.0.0" a [1, 0, 0]
+  private parseVersion(version: string): number[] {
+    return version.split('.').map((v) => parseInt(v, 10));
   }
 
   async firebaseLogin(dto: FirebaseAuthDto) {
