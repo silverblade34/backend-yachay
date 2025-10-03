@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { MulterModule } from '@nestjs/platform-express';
 import { typeOrmConfig } from './config/typeorm.config';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
@@ -12,13 +13,17 @@ import { CategoryModule } from './modules/category/category.module';
 import { CharactersModule } from './modules/characters/characters.module';
 import { LearningModule } from './modules/learning/learning.module';
 import { QuizModule } from './modules/quiz/quiz.module';
-import { Trivia } from './modules/trivia/entities/trivia.entity';
 import { TriviaModule } from './modules/trivia/trivia.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true}),
+    ConfigModule.forRoot({ isGlobal: true }),
     TypeOrmModule.forRoot(typeOrmConfig),
+    MulterModule.register({
+      limits: {
+        fileSize: 100 * 1024 * 1024,
+      },
+    }),
     AuthModule,
     UserModule,
     AcademicModule,
@@ -29,7 +34,7 @@ import { TriviaModule } from './modules/trivia/trivia.module';
     CategoryModule,
     LearningModule,
     QuizModule,
-    TriviaModule
+    TriviaModule,
   ],
   controllers: [],
   providers: [],

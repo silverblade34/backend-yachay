@@ -27,6 +27,8 @@ export class QuizService {
 
   async createQuiz(
     createQuizDto: CreateQuizDto,
+    filename: string,
+    generatedFromDocument: boolean,
     userId: string,
     questionIds: string[]
   ): Promise<Quiz> {
@@ -42,6 +44,8 @@ export class QuizService {
         topic: createQuizDto.topic,
         description: createQuizDto.description,
         difficulty: createQuizDto.difficulty,
+        filename,
+        generatedFromDocument,
         language: createQuizDto.language || 'español',
         totalQuestions: createQuizDto.questionCount,
         timeLimit: createQuizDto.timeLimit,

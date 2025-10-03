@@ -606,4 +606,305 @@ multiple_choice(4 opts,1 correcta)|multiple_select(4-6 opts,2-3 correctas)|true_
       relatedConcepts: []
     };
   }
+
+
+  /**
+ * Genera preguntas basadas en el contenido de un archivo
+ */
+  async generateQuestionsFromFileContent(
+    fileContent: string,
+    request: QuestionGenerationRequest
+  ): Promise<GeneratedQuestion[]> {
+    this.logger.log(`Generando ${request.questionCount} preguntas desde contenido del archivo`);
+
+    // Generar tópicos específicos del contenido
+    const specificTopics = await this.extractTopicsFromContent(
+      fileContent,
+      request.questionCount
+    );
+
+    const promises: Promise<GeneratedQuestion | null>[] = [];
+
+    // Generar con Gemini
+    for (let i = 0; i < request.questionCount; i++) {
+      const modelIndex = i % this.models.length;
+      const specificTopic = specificTopics[i % specificTopics.length];
+
+      const singleQuestionRequest = {
+        ...request,
+        questionCount: 1,
+        specificTopic: specificTopic,
+        fileContent: fileContent // Pasamos el contenido del archivo
+      };
+
+      promises.push(
+        this.generateSingleQuestionFromContentWithGemini(
+          singleQuestionRequest,
+          this.models[modelIndex],
+          modelIndex + 1,
+          i + 1
+        )
+      );
+    }
+
+    const results = await Promise.allSettled(promises);
+    let newQuestions = results
+      .map(result => result.status === 'fulfilled' ? result.value : null)
+      .filter((q): q is GeneratedQuestion => q !== null);
+
+    // Completar con Mistral si faltan preguntas
+    const stillNeeded = request.questionCount - newQuestions.length;
+    if (stillNeeded > 0) {
+      this.logger.log(`Gemini generó ${newQuestions.length}/${request.questionCount}. Generando ${stillNeeded} con Mistral`);
+
+      const mistralQuestions = await this.generateQuestionsFromContentWithMistral(
+        { ...request, fileContent },
+        specificTopics.slice(newQuestions.length)
+      );
+      newQuestions = [...newQuestions, ...mistralQuestions];
+    }
+
+    // Guardar preguntas en el banco
+    if (newQuestions.length > 0) {
+      const savedQuestions = await this.questionsBankService.saveQuestions(
+        newQuestions,
+        request
+      );
+      this.logger.log(`${savedQuestions.length} preguntas guardadas desde archivo`);
+      return savedQuestions;
+    }
+
+    return newQuestions;
+  }
+
+  /**
+   * Extrae tópicos específicos del contenido del archivo
+   */
+  private async extractTopicsFromContent(
+    content: string,
+    count: number
+  ): Promise<string[]> {
+    const topicPrompt = `Analiza el siguiente contenido y extrae ${count} tópicos específicos para crear preguntas de quiz.
+
+CONTENIDO:
+${content.substring(0, 4000)}
+
+Devuelve SOLO un array JSON de strings con los tópicos específicos:
+["Tópico 1", "Tópico 2", "Tópico 3"]`;
+
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.openRouterApiKey}`,
+          'Content-Type': 'application/json',
+          'X-Title': 'Quiz Generator'
+        },
+        body: JSON.stringify({
+          model: 'mistralai/mistral-7b-instruct:free',
+          messages: [
+            {
+              role: 'system',
+              content: 'Eres un analizador de contenido. Extrae tópicos específicos y devuelve SOLO un array JSON.'
+            },
+            {
+              role: 'user',
+              content: topicPrompt
+            }
+          ],
+          temperature: 0.3,
+          max_tokens: 400
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error extrayendo tópicos: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const responseContent = data.choices[0]?.message?.content?.trim();
+
+      // Parsear el array de tópicos
+      const jsonMatch = responseContent.match(/\[[\s\S]*?\]/);
+      if (jsonMatch) {
+        const topics = JSON.parse(jsonMatch[0]);
+        if (Array.isArray(topics) && topics.length > 0) {
+          return topics.slice(0, count);
+        }
+      }
+
+      throw new Error('No se pudieron extraer tópicos del contenido');
+
+    } catch (error) {
+      this.logger.warn('Error extrayendo tópicos, usando fallback:', error.message);
+
+      // Fallback: dividir el contenido en secciones
+      const sections = content.split('\n\n').filter(s => s.trim().length > 50);
+      return sections.slice(0, count).map((section, i) =>
+        `Sección ${i + 1}: ${section.substring(0, 100)}...`
+      );
+    }
+  }
+
+  /**
+   * Genera una pregunta con Gemini basada en contenido de archivo
+   */
+  private async generateSingleQuestionFromContentWithGemini(
+    request: QuestionGenerationRequest & { fileContent: string },
+    model: any,
+    instanceNumber: number,
+    questionNumber: number
+  ): Promise<GeneratedQuestion | null> {
+    try {
+      const prompt = this.buildContentBasedPrompt(request, questionNumber);
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+
+      const questions = this.parseEnhancedQuestions(text, request, `GEMINI-${instanceNumber}`);
+      return questions[0] || null;
+    } catch (error) {
+      this.logger.warn(`Error generando pregunta ${questionNumber} con GEMINI-${instanceNumber}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Genera preguntas con Mistral basadas en contenido de archivo
+   */
+  private async generateQuestionsFromContentWithMistral(
+    request: QuestionGenerationRequest & { fileContent: string },
+    specificTopics: string[]
+  ): Promise<GeneratedQuestion[]> {
+    const questions: GeneratedQuestion[] = [];
+
+    for (let i = 0; i < request.questionCount; i++) {
+      try {
+        const specificTopic = specificTopics[i % specificTopics.length];
+        const question = await this.generateSingleQuestionFromContentWithMistral(
+          { ...request, specificTopic },
+          i + 1
+        );
+
+        if (question) {
+          questions.push(question);
+        }
+      } catch (error) {
+        this.logger.warn(`Error generando pregunta ${i + 1} con Mistral:`, error.message);
+      }
+    }
+
+    return questions;
+  }
+
+  /**
+   * Genera una pregunta con Mistral basada en contenido de archivo
+   */
+  private async generateSingleQuestionFromContentWithMistral(
+    request: QuestionGenerationRequest & { fileContent: string },
+    questionNumber: number
+  ): Promise<GeneratedQuestion | null> {
+    try {
+      const prompt = this.buildContentBasedPrompt(request, questionNumber);
+
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.openRouterApiKey}`,
+          'Content-Type': 'application/json',
+          'X-Title': 'Quiz Generator'
+        },
+        body: JSON.stringify({
+          model: 'mistralai/mistral-7b-instruct:free',
+          messages: [
+            {
+              role: 'system',
+              content: 'Eres un generador de preguntas de quiz basadas en contenido específico. Responde SOLO con JSON válido.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0.7,
+          max_tokens: 1000
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Mistral API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices[0]?.message?.content?.trim();
+
+      if (!content) {
+        throw new Error('Empty response from Mistral');
+      }
+
+      const questions = this.parseEnhancedQuestions(content, request, 'MISTRAL');
+      return questions[0] || null;
+
+    } catch (error) {
+      this.logger.error(`Error generando pregunta con Mistral:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Construye el prompt para generar preguntas basadas en contenido
+   */
+  private buildContentBasedPrompt(
+    request: QuestionGenerationRequest & { fileContent: string },
+    questionNumber: number
+  ): string {
+    const questionTypesText = request.questionTypes
+      .map(q => q.type)   // extrae solo el campo "type"
+      .join(' | ');       // lo junta separado por |
+
+    // Truncar contenido si es muy largo
+    const maxContentLength = 3000;
+    const truncatedContent = request.fileContent.length > maxContentLength
+      ? request.fileContent.substring(0, maxContentLength) + '...'
+      : request.fileContent;
+
+    return `🎓 YACHAY - Genera 1 pregunta de quiz basada en el CONTENIDO PROPORCIONADO.
+
+📄 CONTENIDO DEL DOCUMENTO:
+${truncatedContent}
+
+📋 SPECS: "${request.topic}" | ${request.difficulty} | ${request.language}
+Tipos: ${questionTypesText}
+
+${request.specificTopic ? `🎯 ENFOQUE ESPECÍFICO: "${request.specificTopic}"\n` : ''}
+
+🚨 IMPORTANTE: 
+- La pregunta DEBE estar basada en información EXPLÍCITA del contenido proporcionado
+- NO inventes información que no esté en el documento
+- Usa citas o referencias del contenido cuando sea relevante
+- La respuesta correcta debe estar claramente respaldada por el contenido
+
+🎯 TIPOS DE PREGUNTA:
+multiple_choice(4 opts,1 correcta)|multiple_select(4-6 opts,2-3 correctas)|true_false|fill_blank(1-3 espacios)|drag_drop|sequence_order(4-6 elementos)|match_pairs(4-6 pares)|select_text|categorize(6-8 elementos,2-3 categorías)|short_answer(1-3 palabras)
+
+📊 JSON REQUERIDO:
+{
+  "questions": [{
+    "id": "${questionNumber}_${Date.now()}",
+    "question": "Pregunta basada en el contenido",
+    "type": "tipo_pregunta",
+    "options": [{"id":"opt_1","text":"Texto","isCorrect":boolean,"order":1,"explanation":"Por qué"}],
+    "correctAnswers": ["opt_1"],
+    "hints": [
+      {"level":"subtle","text":"Pista sutil"},
+      {"level":"moderate","text":"Pista moderada"},
+      {"level":"obvious","text":"Pista obvia"}
+    ],
+    "explanation": {"brief":"Breve","detailed":"Detallada con referencia al contenido","relatedConcepts":["concepto1"]},
+    "tags": ["tag1","tag2"]
+  }]
+}
+
+🚨 SOLO JSON válido. Exactamente 1 pregunta basada en el contenido.`;
+  }
 }

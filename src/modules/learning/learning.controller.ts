@@ -1,13 +1,15 @@
-import { Controller, Get, Post, Body, Logger, HttpException, HttpStatus, HttpCode, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Logger, HttpException, HttpStatus, HttpCode, UseGuards, Req, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { LearningService } from './learning.service';
-import { CreateQuizDto } from './dto/create-quiz.dto';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { CreateQuizDto, CreateQuizFileDto } from './dto/create-quiz.dto';
+import { ApiConsumes, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { QuickExamDto } from './dto/quick-exam.dto';
 import { DifficultyLevel } from './enum/difficulty-level.enum';
 import { QuestionType } from './enum/question-type.enum';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { QuestionGenerationRequest } from '../quiz/interfaces/question-generation-request.interface';
 import { QuizService } from '../quiz/quiz.service';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { FileContentService } from './file-content.service';
 
 @ApiTags('🎓 Yachay Quiz Generator')
 @UseGuards(JwtAuthGuard)
@@ -17,7 +19,8 @@ export class LearningController {
 
   constructor(
     private readonly learningService: LearningService,
-    private readonly quizService: QuizService
+    private readonly quizService: QuizService,
+    private readonly fileContentService: FileContentService
   ) { }
 
   @HttpCode(HttpStatus.OK)
@@ -81,6 +84,8 @@ export class LearningController {
       // Guardar el quiz
       const savedQuiz = await this.quizService.createQuiz(
         createQuizDto,
+        "",
+        false,
         userId,
         questionIds
       );
@@ -112,6 +117,172 @@ export class LearningController {
       }
       throw new HttpException(
         'Error al generar el quiz personalizado',
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
+
+  @Post('generate-quiz-from-file')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Generar quiz desde archivo',
+    description: 'Crea un quiz personalizado analizando el contenido de un archivo PDF, DOCX o PPTX'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Quiz generado exitosamente desde el archivo'
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Error de validación o tipo de archivo no soportado'
+  })
+  async generateQuizFromFile(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() createQuizDto: CreateQuizFileDto,
+    @Req() req: any
+  ) {
+    try {
+      const { userId } = req.user;
+      this.logger.log(`Usuario ${userId} solicitando generación de quiz desde archivo`);
+
+      // Validar archivo
+      if (!file) {
+        throw new HttpException(
+          'Debe proporcionar un archivo',
+          HttpStatus.BAD_REQUEST
+        );
+      }
+
+      // Validar tipo de archivo
+      const allowedMimeTypes = [
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/vnd.ms-powerpoint'
+      ];
+
+      if (!allowedMimeTypes.includes(file.mimetype)) {
+        throw new HttpException(
+          'Tipo de archivo no soportado. Use PDF, DOCX o PPTX',
+          HttpStatus.BAD_REQUEST
+        );
+      }
+
+      // Validar tamaño (máximo 10MB)
+      if (file.size > 100 * 1024 * 1024) {
+        throw new HttpException(
+          'El archivo es demasiado grande. Máximo 10MB',
+          HttpStatus.BAD_REQUEST
+        );
+      }
+
+      // Extraer contenido del archivo
+      this.logger.log(`Extrayendo contenido del archivo: ${file.originalname}`);
+      const fileContent = await this.fileContentService.extractContent(file);
+
+      // Validar que el contenido sea suficiente
+      if (!this.fileContentService.validateContent(fileContent, 100)) {
+        throw new HttpException(
+          'El contenido del archivo es insuficiente para generar preguntas (mínimo 100 palabras)',
+          HttpStatus.BAD_REQUEST
+        );
+      }
+
+      // Truncar contenido si es necesario
+      const processedContent = this.fileContentService.truncateContent(fileContent);
+
+      this.logger.log(`Contenido extraído: ${processedContent.length} caracteres`);
+
+      const types = createQuizDto.questionTypes.split(',').map(t => t.trim()).filter(t => t);
+
+      const questionTypes: Array<{
+        type: QuestionType;
+        percentage: number;
+        priority: number;
+      }> = types.map((type, index) => ({
+        type: type as QuestionType,
+        percentage: Math.floor(100 / types.length),
+        priority: types.length - index
+      }));
+
+      // Preparar request para generación
+      const enhancedRequest: QuestionGenerationRequest = {
+        topic: createQuizDto.topic || 'Contenido del documento',
+        description: `Preguntas basadas en el contenido proporcionado: ${createQuizDto.description || ''}`,
+        difficulty: createQuizDto.difficulty,
+        questionCount: createQuizDto.questionCount,
+        questionTypes: questionTypes,
+        language: createQuizDto.language || 'español',
+        focusAreas: [],
+      };
+
+      // Generar preguntas desde el contenido
+      const questions = await this.learningService.generateQuestionsFromFileContent(
+        processedContent,
+        enhancedRequest
+      );
+
+      // Validar IDs
+      const questionIds = questions.map(q => q.id);
+      const invalidIds = questionIds.filter(id => !this.isValidUUID(id));
+
+      if (invalidIds.length > 0) {
+        this.logger.error(`IDs inválidos encontrados: ${invalidIds.join(', ')}`);
+        throw new HttpException(
+          'Error: Algunas preguntas no tienen IDs válidos',
+          HttpStatus.INTERNAL_SERVER_ERROR
+        );
+      }
+
+      this.logger.log(`Generadas ${questions.length} preguntas desde archivo con IDs válidos`);
+
+      // Guardar el quiz
+      const savedQuiz = await this.quizService.createQuiz(
+        {
+          ...createQuizDto,
+          questionTypes,
+          topic: createQuizDto.topic || 'Contenido del documento',
+          description: `Preguntas basadas en el contenido proporcionado`
+        },
+        file.originalname,
+        true,
+        userId,
+        questionIds
+      );
+
+      return {
+        id: savedQuiz.id,
+        title: savedQuiz.title,
+        topic: savedQuiz.topic,
+        description: savedQuiz.description,
+        difficulty: savedQuiz.difficulty,
+        totalQuestions: savedQuiz.totalQuestions,
+        timeLimit: savedQuiz.timeLimit,
+        ispublic: savedQuiz.ispublic,
+        allowComments: savedQuiz.allowComments,
+        allowRetries: savedQuiz.allowRetries,
+        showResults: savedQuiz.showResults,
+        questions: questions,
+        metadata: {
+          createdAt: savedQuiz.createdAt.toISOString(),
+          language: savedQuiz.language,
+          categoryId: savedQuiz.categoryId,
+          courseModuleId: savedQuiz.courseModuleId,
+          sourceFile: file.originalname,
+          fileType: file.mimetype
+        }
+      };
+
+    } catch (error) {
+      this.logger.error('Error generando quiz desde archivo:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        'Error al generar el quiz desde el archivo',
         HttpStatus.INTERNAL_SERVER_ERROR
       );
     }

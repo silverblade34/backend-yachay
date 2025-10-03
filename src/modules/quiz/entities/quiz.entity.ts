@@ -33,6 +33,12 @@ export class Quiz {
   @Column({ type: 'text', nullable: true })
   description?: string;
 
+  @Column({ type: 'boolean', default: false, nullable: true })
+  generatedFromDocument?: boolean;
+
+  @Column({ type: 'text', nullable: true })
+  filename?: string;
+
   @Column({
     type: 'enum',
     enum: DifficultyLevel,

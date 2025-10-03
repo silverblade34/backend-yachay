@@ -7,6 +7,7 @@ export interface QuestionGenerationRequest {
     difficulty: DifficultyLevel;
     questionCount: number;
     language: string;
+    questionTypesSingle?: string;
 
     // Tipos de preguntas con distribución
     questionTypes: Array<{
