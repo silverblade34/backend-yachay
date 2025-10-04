@@ -20,4 +20,5 @@ export interface QuestionGenerationRequest {
     focusAreas?: string[];        // Áreas específicas a enfatizar
 
     specificTopic?: string; // Esto lo generara la IA
+    fileContent?: string;
 }

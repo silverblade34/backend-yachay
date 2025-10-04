@@ -1,14 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
-import { QuestionsBank } from '../quiz/entities/question-banks.entity';
-import { QuestionGenerationRequest } from './interfaces/question-generation-request.interface';
-import { GeneratedQuestion } from './interfaces/generated-question.interface';
-import { QuestionType } from '../learning/enum/question-type.enum';
-import { DifficultyLevel } from '../learning/enum/difficulty-level.enum';
-import { QuestionOption } from '../learning/interfaces/question-option.interface';
-import { QuestionHint } from '../learning/interfaces/question-hint.interface';
-import { QuestionExplanation } from '../learning/interfaces/question-explanation.interface';
+import { QuestionsBank } from '../entities/question-banks.entity';
+import { QuestionGenerationRequest } from '../interfaces/question-generation-request.interface';
+import { GeneratedQuestion } from '../interfaces/generated-question.interface';
+import { QuestionType } from '../../learning/enum/question-type.enum';
+import { DifficultyLevel } from '../../learning/enum/difficulty-level.enum';
+import { QuestionOption } from '../../learning/interfaces/question-option.interface';
+import { QuestionHint } from '../../learning/interfaces/question-hint.interface';
+import { QuestionExplanation } from '../../learning/interfaces/question-explanation.interface';
 
 @Injectable()
 export class QuestionsBankService {
@@ -81,7 +81,7 @@ export class QuestionsBankService {
             let filteredQuestions = questions;
             if (request.description && questions.length > 0) {
                 const keywords = this.extractKeywords(request.description);
-                filteredQuestions = this.filterByKeywordMatches(questions, keywords, 2);
+                filteredQuestions = this.filterByKeywordMatches(questions, keywords, 3);
             }
 
             // Convertir a formato GeneratedQuestion

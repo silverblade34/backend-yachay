@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { QuizResult } from './entities/quiz-result.entity';
@@ -9,6 +9,7 @@ import { Category } from '../category/entities/category.entity';
 import { Quiz } from './entities/quiz.entity';
 import { QuestionsBank } from './entities/question-banks.entity';
 import { CreateQuizDto } from '../learning/dto/create-quiz.dto';
+import { QuizDuplicateValidatorService } from './services/quiz-duplicate-validator.service';
 
 @Injectable()
 export class QuizService {
@@ -23,6 +24,7 @@ export class QuizService {
     private categoryRepo: Repository<Category>,
     @InjectRepository(User)
     private userRepo: Repository<User>,
+    private duplicateValidator: QuizDuplicateValidatorService
   ) { }
 
   async createQuiz(
@@ -33,12 +35,23 @@ export class QuizService {
     questionIds: string[]
   ): Promise<Quiz> {
     try {
-      const questions = await this.questionBankRepo.findByIds(questionIds);
-
-      if (questions.length !== questionIds.length) {
-        throw new Error('Algunas preguntas no se encontraron en el banco');
+      // 1. Validar si es duplicado
+      const duplicatedQuiz = await this.duplicateValidator.findDuplicate(createQuizDto, userId);
+      
+      if (duplicatedQuiz) {
+        return duplicatedQuiz;
       }
 
+      // 2. Validar preguntas
+      const questions = await this.questionBankRepo.findByIds(questionIds);
+      if (questions.length !== questionIds.length) {
+        throw new HttpException(
+          'Algunas preguntas no se encontraron en el banco',
+          HttpStatus.BAD_REQUEST
+        );
+      }
+
+      // 3. Crear el quiz
       const quiz = this.quizRepo.create({
         title: createQuizDto.title,
         topic: createQuizDto.topic,
@@ -62,8 +75,15 @@ export class QuizService {
       });
 
       return await this.quizRepo.save(quiz);
+
     } catch (error) {
-      throw error;
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        'Error al crear el quiz',
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
     }
   }
 
