@@ -127,10 +127,13 @@ export class QuizGenerationOrchestratorService {
   /**
  * Obtiene estadísticas de qué provider generó cada pregunta
  */
-  private getGenerationStats(questions: GeneratedQuestion[]): Record<string, number> {
-    const stats: Record<string, number> = {
+  private getGenerationStats(questions: GeneratedQuestion[]): {
+    total: number;
+    byProvider: Record<string, number>;
+  } {
+    const stats = {
       total: questions.length,
-      byProvider: 0
+      byProvider: {} as Record<string, number>,
     };
 
     for (const question of questions) {
@@ -140,6 +143,7 @@ export class QuizGenerationOrchestratorService {
 
     return stats;
   }
+
 
   private buildGenerationRequest(dto: CreateQuizDto): QuestionGenerationRequest {
     return {
