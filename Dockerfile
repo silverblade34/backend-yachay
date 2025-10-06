@@ -1,7 +1,19 @@
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 
 WORKDIR /usr/src/app
+
+# Instalar dependencias necesarias para compilar canvas
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    libcairo2-dev \
+    libpango1.0-dev \
+    libjpeg-dev \
+    libgif-dev \
+    librsvg2-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
 COPY package*.json ./
@@ -16,9 +28,18 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM node:20-alpine AS production
+FROM node:20-slim AS production
 
 WORKDIR /usr/src/app
+
+# Instalar solo las dependencias runtime de canvas (sin herramientas de compilación)
+RUN apt-get update && apt-get install -y \
+    libcairo2 \
+    libpango1.0-0 \
+    libjpeg62-turbo \
+    libgif7 \
+    librsvg2-2 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
 COPY package*.json ./
@@ -33,7 +54,7 @@ COPY --from=builder /usr/src/app/dist ./dist
 EXPOSE 3030
 
 # Create non-root user
-RUN addgroup -g 1001 -S nodejs && adduser -S nestjs -u 1001
+RUN groupadd -r nodejs && useradd -r -g nodejs nestjs
 
 # Change ownership of the app directory
 RUN chown -R nestjs:nodejs /usr/src/app
