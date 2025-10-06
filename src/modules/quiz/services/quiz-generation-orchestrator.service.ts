@@ -86,6 +86,10 @@ export class QuizGenerationOrchestratorService {
       request
     );
 
+    // 4. Obtener estadísticas de generación
+    const stats = this.getGenerationStats(questions);
+    this.logger.log(`Estadísticas de generación:`, stats);
+
     // 3. Validar IDs
     this.validateQuestionIds(questions);
 
@@ -118,6 +122,23 @@ export class QuizGenerationOrchestratorService {
         HttpStatus.BAD_REQUEST
       );
     }
+  }
+
+  /**
+ * Obtiene estadísticas de qué provider generó cada pregunta
+ */
+  private getGenerationStats(questions: GeneratedQuestion[]): Record<string, number> {
+    const stats: Record<string, number> = {
+      total: questions.length,
+      byProvider: 0
+    };
+
+    for (const question of questions) {
+      const provider = (question as any).generatedBy || 'unknown';
+      stats.byProvider[provider] = (stats.byProvider[provider] || 0) + 1;
+    }
+
+    return stats;
   }
 
   private buildGenerationRequest(dto: CreateQuizDto): QuestionGenerationRequest {

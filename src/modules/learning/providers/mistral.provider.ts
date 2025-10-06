@@ -4,7 +4,6 @@ import { GeneratedQuestion } from '../../quiz/interfaces/generated-question.inte
 import { QuestionGenerationRequest } from '../../quiz/interfaces/question-generation-request.interface';
 import { PromptBuilderService } from '../services/prompt-builder.service';
 import { QuestionParserService } from '../services/question-parser.service';
-
 @Injectable()
 export class MistralProvider extends AIProvider {
   private readonly logger = new Logger(MistralProvider.name);
@@ -41,7 +40,17 @@ export class MistralProvider extends AIProvider {
 
       const response = await this.callAPI(prompt);
       const questions = this.questionParser.parseQuestions(response, request, this.config.name);
-      return questions[0] || null;
+
+      if (questions[0]) {
+        // Agregar metadata del provider
+        return {
+          ...questions[0],
+          generatedBy: this.config.name,
+          generatedAt: new Date().toISOString()
+        };
+      }
+
+      return null;
     } catch (error) {
       this.logger.error(
         `Error generating question ${questionNumber} with ${this.config.name}:`,

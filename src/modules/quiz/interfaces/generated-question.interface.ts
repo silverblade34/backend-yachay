@@ -36,4 +36,6 @@ export interface GeneratedQuestion {
 
     // Metadatos para personalización
     tags: string[];
+    generatedBy?: string;
+    generatedAt?: string;
 }

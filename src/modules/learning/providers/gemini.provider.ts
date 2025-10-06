@@ -24,7 +24,6 @@ export class GeminiProvider extends AIProvider {
     private questionParser: QuestionParserService
   ) {
     super();
-    
     const apiKeys = [
       process.env.GEMINI_API_KEY_6,
       process.env.GEMINI_API_KEY_2,
@@ -66,7 +65,17 @@ export class GeminiProvider extends AIProvider {
       const text = response.text();
 
       const questions = this.questionParser.parseQuestions(text, request, this.config.name);
-      return questions[0] || null;
+      
+      if (questions[0]) {
+        // Agregar metadata del provider
+        return {
+          ...questions[0],
+          generatedBy: this.config.name,
+          generatedAt: new Date().toISOString()
+        };
+      }
+      
+      return null;
     } catch (error) {
       this.logger.warn(
         `Error generating question ${questionNumber} with ${this.config.name}:`,
